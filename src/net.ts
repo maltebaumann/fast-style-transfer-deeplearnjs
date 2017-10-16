@@ -107,6 +107,15 @@ export class TransformNet {
     padding = filter_size // 2
     padded_net = tf.pad(net, [[0,0], [padding, padding], [padding, padding], [0, 0]], mode='REFLECT')
     */
+    const filters = this.variables[this.varName(varId)] as Array4D;
+    if (filters.shape[0] % 2 == 0 || filters.shape[1] % 2 == 0) {
+      console.log("Can't apply reflection padding, because filter size isn't odd.")
+    }
+
+    const padding = Math.floor(filters.shape[0] / 2);
+    console.log('Padding: ', padding)
+    // Need to manually add reflection padding (mirroring). See:
+    // https://github.com/tensorflow/tensorflow/blob/624bcfe409601910951789325f0b97f520c0b1ee/tensorflow/python/ops/array_ops.py#L1644
 
     const y = this.math.conv2d(
       input, 
@@ -132,6 +141,7 @@ export class TransformNet {
     //       scaling followed by a conventional convolution. This 
     //       reduces checkerboard artifacts and the need for total
     //       variation loss.
+    //       - Deeplearn.js is currently limited to bilinear sampling
 
     const [height, width, ]: [number, number, number] = input.shape;
     const newRows = height * strides;
@@ -149,14 +159,14 @@ export class TransformNet {
     return y3;
   }
 
-  private upsamplingLayer(input: Array3D, numFilters: number, strides: number, varId: number): Array3D {
+  /* private upsamplingLayer(input: Array3D, numFilters: number, strides: number, varId: number): Array3D {
     const [height, width, ]: [number, number, number] = input.shape;
     const newRows = height * strides;
     const newCols = width * strides;
     const newShape: [number, number, number] = [newRows, newCols, numFilters];
 
-
-  }
+    // TODO: Implement bilinear/nearest-neighbor upsampling + convolution
+  } */
 
   private residualBlock(input: Array3D, varId: number): Array3D {
     const conv1 = this.convLayer(input, 1, true, varId);
