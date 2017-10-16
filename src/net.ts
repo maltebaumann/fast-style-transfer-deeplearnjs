@@ -2,9 +2,7 @@ import {Scalar, Array1D, Array3D, Array4D, CheckpointLoader, GPGPUContext, NDArr
 
 import * as imagenet_util from './imagenet_util';
 
-const GOOGLE_CLOUD_STORAGE_DIR =
-//    'https://storage.googleapis.com/learnjs-data/checkpoint_zoo/';
-    document.URL.substr(0,document.URL.lastIndexOf('/')) + '/ckpts/';
+const CHECKPOINT_DIR = document.URL.substr(0,document.URL.lastIndexOf('/')) + '/ckpts/';
 
 export class TransformNet {
   private variables: {[varName: string]: NDArray};
@@ -13,13 +11,13 @@ export class TransformNet {
     private math: NDArrayMathGPU, private style: string) {}
 
   /**
-   * Loads necessary variables for SqueezeNet. Resolves the promise when the
-   * variables have all been loaded.
+   * Loads necessary variables for the transformation network. Resolves the 
+   * promise when the variables have all been loaded.
    */
   loadVariables(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const checkpointLoader =
-          new CheckpointLoader(GOOGLE_CLOUD_STORAGE_DIR + this.style + '/');
+          new CheckpointLoader(CHECKPOINT_DIR + this.style + '/');
       checkpointLoader.getAllVariables()
       .then(variables => {
         this.variables = variables;
@@ -30,7 +28,7 @@ export class TransformNet {
   }
 
   /**
-   * Preprocess an RGB color texture before inferring through squeezenet.
+   * Preprocess an RGB color texture before inferring through the network.
    * @param rgbTexture The RGB color texture to process into an Array3D.
    * @param imageDimensions The 2D dimensions of the image.
    */
@@ -57,13 +55,11 @@ export class TransformNet {
   }
 
   /**
-   * Infer through TransformNet, assumes variables have been loaded. This does
-   * standard ImageNet pre-processing before inferring through the model. This
-   * method returns named activations as well as pre-softmax logits. The user
-   * needs to clean up namedActivations after inferring.
+   * Infer through TransformNet, assumes variables have been loaded. This
+   * method returns the transformed image.
    *
    * @param preprocessedInput preprocessed input Array.
-   * @return Array3D containing pixels of output img
+   * @return Array3D containing pixels of output img.
    */
   infer(preprocessedInput: Array3D): Array3D {
 
@@ -103,9 +99,22 @@ export class TransformNet {
 
   private convLayer(input: Array3D, strides: number, 
     relu: boolean, varId: number): Array3D {
-    const y = this.math.conv2d(input, 
+
+    // TODO: Manually add reflection padding to improve borders of output:
+    /*
+    if filter_size % 2 == 0:
+        raise ValueError('Filter size is expected to be odd.')
+    padding = filter_size // 2
+    padded_net = tf.pad(net, [[0,0], [padding, padding], [padding, padding], [0, 0]], mode='REFLECT')
+    */
+
+    const y = this.math.conv2d(
+      input, 
       this.variables[this.varName(varId)] as Array4D, 
-      null, [strides, strides], 'same');
+      null, 
+      [strides, strides], 
+      'same'
+    );
 
     const y2 = this.instanceNorm(y, varId + 1);
 
@@ -118,6 +127,12 @@ export class TransformNet {
 
   private convTransposeLayer(input: Array3D, numFilters: number,
     strides: number, varId: number): Array3D {
+
+    // TODO: Replace transposed convolutions with nearest neighbour
+    //       scaling followed by a conventional convolution. This 
+    //       reduces checkerboard artifacts and the need for total
+    //       variation loss.
+
     const [height, width, ]: [number, number, number] = input.shape;
     const newRows = height * strides;
     const newCols = width * strides;
@@ -132,6 +147,15 @@ export class TransformNet {
     const y3 = this.math.relu(y2);
 
     return y3;
+  }
+
+  private upsamplingLayer(input: Array3D, numFilters: number, strides: number, varId: number): Array3D {
+    const [height, width, ]: [number, number, number] = input.shape;
+    const newRows = height * strides;
+    const newCols = width * strides;
+    const newShape: [number, number, number] = [newRows, newCols, numFilters];
+
+
   }
 
   private residualBlock(input: Array3D, varId: number): Array3D {
